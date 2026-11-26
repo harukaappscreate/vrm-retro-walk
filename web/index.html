@@ -566,9 +566,15 @@
   }
 
   let prevTick = performance.now();
+  // Save CPU: when the character is sitting, napping or standing still and nobody is touching it,
+  // draw 10 times a second instead of 30 (after 0.5 s of calm). Any touch brings back 30 at once.
+  const CALM_STATES = new Set(["idle", "sit", "nap"]);
+  let lastState = "";
+  let lastBusyFx = true;
+  let calmTicks = 0;
   async function tickLoop() {
     const now = performance.now();
-    const dt = Math.min(0.08, Math.max(0.01, (now - prevTick) / 1000));
+    const dt = Math.min(0.12, Math.max(0.01, (now - prevTick) / 1000));
     prevTick = now;
 
     const payload = {
@@ -612,6 +618,8 @@
         ctx.putImageData(imgData, 0, 0);
       }
 
+      lastState = String(meta.state || "");
+      lastBusyFx = Boolean(meta.introBig || meta.morphFx || meta.dragHoverFile);
       if (meta.winH && !meta.introBig) curWinH = meta.winH;
       stage.classList.toggle("drop-hover", Boolean(meta.dragHoverFile));
       stage.classList.toggle("perch-preview", Boolean(meta.canPerchPreview));
@@ -626,8 +634,12 @@
       await new Promise((r) => setTimeout(r, 400));
     }
 
+    const calm = CALM_STATES.has(lastState) && !lastBusyFx && !hover && !grabbing && !resizing
+      && !menu.classList.contains("open");
+    calmTicks = calm ? calmTicks + 1 : 0;
+    const frameMs = calmTicks > 15 ? 100 : 33.3;
     const elapsed = performance.now() - now;
-    setTimeout(tickLoop, Math.max(4, Math.round(33.3 - elapsed)));
+    setTimeout(tickLoop, Math.max(4, Math.round(frameMs - elapsed)));
   }
 
   // Restore saved user settings before starting loop
