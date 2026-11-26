@@ -572,25 +572,22 @@ fn find_dev_python(roots: &[PathBuf]) -> String {
 
 fn find_script_and_sample(roots: &[PathBuf]) -> (PathBuf, Option<PathBuf>) {
     let mut script = PathBuf::from("engine/walk_engine.py");
-    let mut sample = None;
     for b in roots {
         let s = b.join("engine/walk_engine.py");
         if s.exists() {
             script = s;
-            let sv = b.join("assets/sample.vrm");
-            if sv.exists() {
-                sample = Some(sv);
-            }
             break;
         }
     }
-    if sample.is_none() {
-        for b in roots {
-            let sv = b.join("assets/sample.vrm");
-            if sv.exists() {
-                sample = Some(sv);
-                break;
-            }
+    // Look for the sample on its own, in root order: the bundled resource folder comes first,
+    // so an installed app never reaches back into the source folder it was built from
+    // (on macOS that folder may be in Downloads/Desktop and trigger a privacy prompt).
+    let mut sample = None;
+    for b in roots {
+        let sv = b.join("assets/sample.vrm");
+        if sv.exists() {
+            sample = Some(sv);
+            break;
         }
     }
     (script, sample)
