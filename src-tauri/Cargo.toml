@@ -1,0 +1,19 @@
+[package]
+name = "vrm_retro_walk"
+version = "0.1.0"
+description = "Shimeji-style retro pixel VRM desktop mascot powered by Pyxel 3 headless + Tauri"
+authors = ["haruka_apps"]
+edition = "2021"
+license = "MIT"
+
+[lib]
+name = "vrm_retro_walk_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

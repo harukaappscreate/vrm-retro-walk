@@ -1,0 +1,16 @@
+{
+  "name": "vrm-retro-walk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shimeji-style retro pixel VRM desktop mascot powered by Pyxel 3 + Tauri",
+  "scripts": {
+    "pack:engine": "python scripts/build_engine.py",
+    "build:standalone": "tauri build --config src-tauri/tauri.bundle.conf.json",
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.2.0"
+  }
+}

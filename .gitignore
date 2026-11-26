@@ -1,0 +1,9 @@
+node_modules/
+src-tauri/target/
+src-tauri/engine_dist/
+.pyinstaller_work/
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+src-tauri/gen/

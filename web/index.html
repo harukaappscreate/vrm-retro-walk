@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VRM RETRO WALK</title>
+<style>
+  :root {
+    --bg: rgba(20, 18, 34, 0.94);
+    --ink: #eef1ff;
+    --acc: #70c6a9;
+    --amber: #ffe27a;
+    --pink: #ff8fb1;
+    --bd: #4e456e;
+  }
+  * { box-sizing: border-box; user-select: none; -webkit-user-select: none; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    overflow: hidden; background: transparent;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color: var(--ink);
+  }
+  .stage {
+    position: relative; width: 100%; height: 100%;
+    display: flex; align-items: stretch; justify-content: stretch;
+  }
+  .stage.drop-hover {
+    outline: 2px dashed var(--acc);
+    outline-offset: -4px;
+    background: rgba(112, 198, 169, 0.10);
+    border-radius: 10px;
+  }
+  canvas#view {
+    width: 100%; height: 100%; display: block;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    cursor: grab;
+  }
+  canvas#view.grabbing { cursor: grabbing; }
+
+  .perch-bar {
+    position: absolute; left: 16%; right: 16%; bottom: 11%;
+    height: 4px; border-radius: 3px;
+    background: var(--amber);
+    box-shadow: 0 0 8px var(--amber);
+    pointer-events: none;
+    display: none;
+  }
+  .stage.perch-preview .perch-bar { display: block; }
+
+  .resize-grip {
+    position: absolute; top: 6px; right: 6px;
+    width: 22px; height: 22px; border-radius: 5px;
+    background: rgba(20, 18, 34, 0.78);
+    border: 1px solid var(--acc); color: var(--acc);
+    font-size: 13px; line-height: 20px; text-align: center;
+    cursor: nesw-resize; opacity: 0; transition: opacity 0.15s;
+    z-index: 12;
+  }
+  .stage:hover .resize-grip, .resize-grip.active { opacity: 0.92; }
+
+  .toast {
+    position: absolute; left: 8px; right: 8px; bottom: 8px;
+    background: var(--bg); border: 1px solid var(--bd); border-radius: 6px;
+    padding: 3px 6px; font-size: 10px; text-align: center;
+    color: var(--acc); pointer-events: none;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .toast.err { color: var(--pink); border-color: var(--pink); }
+  .toast[hidden] { display: none; }
+
+  .menu {
+    position: absolute; inset: 6px;
+    background: var(--bg); border: 2px solid var(--bd); border-radius: 8px;
+    padding: 7px; display: none; flex-direction: column; gap: 5px;
+    font-size: 10px; overflow-y: auto; z-index: 20;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.55);
+  }
+  .menu.open { display: flex; }
+  .menu-hd {
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid #352e52; padding-bottom: 4px;
+  }
+  .menu-title { font-weight: 800; color: var(--amber); font-size: 11px; }
+  .meta-line { font-size: 9px; color: #b7bddb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .grp-lbl { font-size: 9px; color: #9ea6c9; margin-top: 1px; }
+  .row { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+  button, label.btn {
+    background: #2c2640; color: var(--ink); border: 1px solid #594f7c;
+    border-radius: 4px; padding: 3px 6px; font-family: inherit; font-size: 10px;
+    font-weight: 700; cursor: pointer;
+  }
+  button:hover, label.btn:hover { background: #3c3457; }
+  button.on { background: #224b44; color: var(--acc); border-color: var(--acc); }
+  button.danger { background: #4b2333; color: #ffb3c6; border-color: #8f3e5c; }
+  label.btn input[type=file] { display: none; }
+
+  .fallback {
+    position: absolute; inset: 10px; background: var(--bg);
+    border: 2px solid var(--bd); border-radius: 8px; padding: 10px;
+    font-size: 11px; line-height: 1.5; display: flex; flex-direction: column;
+    justify-content: center; gap: 6px; text-align: center;
+  }
+  .fallback[hidden] { display: none; }
+</style>
+</head>
+<body>
+<div class="stage" id="stage">
+  <canvas id="view" width="144" height="164"></canvas>
+  <div class="perch-bar"></div>
+  <div class="resize-grip" id="resizeGrip" title="ドラッグで伸縮 (ホイール / 2本指ピンチでも伸縮)">⤢</div>
+  <div class="toast" id="toast" hidden></div>
+
+  <div class="menu" id="ctxMenu">
+    <div class="menu-hd">
+      <span class="menu-title">VRM RETRO WALK</span>
+      <button type="button" id="btnCloseMenu">✕</button>
+    </div>
+    <div class="meta-line" id="modelInfo">Loading...</div>
+
+    <div class="grp-lbl">モデル (.vrm ドロップOK)</div>
+    <div class="row">
+      <label class="btn">.VRM を開く<input type="file" id="inVrm" accept=".vrm,.glb"></label>
+      <button type="button" id="btnSample">渋ちゃん</button>
+      <button type="button" id="btnReplayIntro">大登場</button>
+    </div>
+
+    <div class="grp-lbl">うごき</div>
+    <div class="row">
+      <button type="button" class="act-btn on" data-act="auto">おまかせ</button>
+      <button type="button" class="act-btn" data-act="walk">歩く</button>
+      <button type="button" class="act-btn" data-act="run">走る</button>
+      <button type="button" class="act-btn" data-act="sit">座る</button>
+      <button type="button" class="act-btn" data-act="nap">おひるね</button>
+      <button type="button" class="act-btn" data-act="wave">手を振る</button>
+    </div>
+
+    <div class="grp-lbl">ウィンドウ乗り・透過・サイズ</div>
+    <div class="row">
+      <button type="button" class="on" id="btnPerch">窓乗り ON</button>
+      <button type="button" id="btnFloor">床へ降りる</button>
+      <button type="button" class="on" id="btnClickThrough">余白透過 ON</button>
+    </div>
+    <div class="row">
+      <button type="button" class="sz-btn" data-h="180">S</button>
+      <button type="button" class="sz-btn" data-h="230">M</button>
+      <button type="button" class="sz-btn on" data-h="280">L</button>
+      <button type="button" id="btnBig">BIG</button>
+      <button type="button" class="on" id="btnIntroOpt">登場大 ON</button>
+    </div>
+
+    <div class="grp-lbl">見た目・音</div>
+    <div class="row">
+      <button type="button" class="st-btn on" data-st="CRISP">CRISP</button>
+      <button type="button" class="st-btn" data-st="GB">GB</button>
+      <button type="button" class="st-btn" data-st="AMBER">AMBER</button>
+      <button type="button" class="on" id="btnOutline">フチ線</button>
+    </div>
+    <div class="row">
+      <button type="button" class="on" id="btnSfx">音 ON</button>
+      <button type="button" class="on" id="btnPin">PIN</button>
+      <button type="button" id="btnCenter">中央へ</button>
+      <button type="button" class="danger" id="btnQuit" style="margin-left:auto;">終了</button>
+    </div>
+  </div>
+
+  <div class="fallback" id="noTauri" hidden>
+    <strong style="color:var(--amber);">VRM RETRO WALK</strong>
+    <span>デスクトップアプリ版から起動してください</span>
+  </div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (!invoke) {
+    $("noTauri").hidden = false;
+    return;
+  }
+
+  const canvas = $("view");
+  const ctx = canvas.getContext("2d", { alpha: true });
+  const stage = $("stage");
+  const grip = $("resizeGrip");
+  const menu = $("ctxMenu");
+  const toast = $("toast");
+
+  const W = 144, H = 164;
+  let imgData = ctx.createImageData(W, H);
+  let buf32 = new Uint32Array(imgData.data.buffer);
+  const lut = new Uint32Array(256);
+  let lastPalVer = 0;
+
+  let style = "CRISP";
+  let outline = true;
+  let sfxOn = true;
+  let pinned = true;
+  let perchOn = true;
+  let introOn = true;
+  let clickThroughOn = true;
+  let autoMode = true;
+  let forceState = "";
+  let curWinH = 280;
+
+  let hover = false;
+  let mx = 0, my = 0;
+  let petAcc = 0;
+  let petTrigger = false;
+  let pokeTrigger = false;
+  let dblTrigger = false;
+  let lastMovePx = null;
+
+  let grabbing = false;
+  let dragStartScreen = null;
+  let dragStartWin = null;
+  let lastDragX = 0, lastDragT = 0, dragVx = 0;
+  let movedOnDrag = false;
+
+  let resizing = false;
+  let resizeStart = null;
+  let resizePending = false;
+
+  let toastTimer = null;
+  function showToast(msg, isErr) {
+    if (!msg) return;
+    toast.textContent = msg;
+    toast.classList.toggle("err", Boolean(isErr));
+    toast.hidden = false;
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toast.hidden = true; }, isErr ? 4000 : 1800);
+  }
+
+  function syncUiButtons() {
+    document.querySelectorAll(".st-btn").forEach((x) => x.classList.toggle("on", x.dataset.st === style));
+    $("btnOutline").classList.toggle("on", outline);
+    $("btnSfx").textContent = sfxOn ? "音 ON" : "音 OFF";
+    $("btnSfx").classList.toggle("on", sfxOn);
+    $("btnPin").classList.toggle("on", pinned);
+    $("btnPerch").textContent = perchOn ? "窓乗り ON" : "窓乗り OFF";
+    $("btnPerch").classList.toggle("on", perchOn);
+    $("btnIntroOpt").textContent = introOn ? "登場大 ON" : "登場大 OFF";
+    $("btnIntroOpt").classList.toggle("on", introOn);
+    $("btnClickThrough").textContent = clickThroughOn ? "余白透過 ON" : "余白透過 OFF";
+    $("btnClickThrough").classList.toggle("on", clickThroughOn);
+    document.querySelectorAll(".sz-btn").forEach((x) => {
+      x.classList.toggle("on", Math.abs(Number(x.dataset.h) - curWinH) < 15);
+    });
+  }
+
+  function saveUiPrefs() {
+    invoke("save_ui_prefs", { style, outline, sfxOn }).catch(() => {});
+  }
+
+  let audioCtx = null;
+  function unlockAudio() {
+    if (!sfxOn) return;
+    if (!audioCtx) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (Ctx) audioCtx = new Ctx();
+    }
+    if (audioCtx && audioCtx.state === "suspended") {
+      audioCtx.resume().catch(() => {});
+    }
+  }
+  function beep(freq, dur, type = "square", vol = 0.035, slideTo = null) {
+    if (!sfxOn || !audioCtx || audioCtx.state !== "running") return;
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, now);
+    if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, now + dur);
+    gain.gain.setValueAtTime(vol, now);
+    gain.gain.exponentialRampToValueAtTime(0.0005, now + dur);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(now);
+    osc.stop(now + dur);
+  }
+  function playSfx(kind) {
+    if (!sfxOn) return;
+    if (kind === "step") beep(180, 0.025, "triangle", 0.015, 110);
+    else if (kind === "pet") { beep(587, 0.06, "square", 0.03); setTimeout(() => beep(880, 0.09, "square", 0.03), 55); }
+    else if (kind === "grab") beep(330, 0.07, "square", 0.03, 490);
+    else if (kind === "land") beep(210, 0.06, "triangle", 0.035, 95);
+    else if (kind === "wave") { beep(523, 0.05, "square", 0.025); setTimeout(() => beep(659, 0.07, "square", 0.025), 55); }
+    else if (kind === "load") { beep(440, 0.05, "square", 0.03); setTimeout(() => beep(660, 0.06, "square", 0.03), 60); setTimeout(() => beep(880, 0.09, "square", 0.03), 120); }
+  }
+
+  function applyHeight(nextH, persistPref = true) {
+    if (resizePending) return;
+    resizePending = true;
+    invoke("set_mascot_height", { height: nextH, persistPref })
+      .then((h) => {
+        curWinH = h;
+        syncUiButtons();
+        showToast(`${Math.round(h)}px`, false);
+      })
+      .catch(() => {})
+      .finally(() => { resizePending = false; });
+  }
+
+  grip.addEventListener("pointerdown", (e) => {
+    e.stopPropagation();
+    unlockAudio();
+    if (e.button !== 0) return;
+    resizing = true;
+    grip.classList.add("active");
+    grip.setPointerCapture(e.pointerId);
+    resizeStart = { x: e.screenX, y: e.screenY, h: curWinH };
+  });
+  grip.addEventListener("pointermove", (e) => {
+    if (!resizing || !resizeStart) return;
+    e.stopPropagation();
+    const dy = resizeStart.y - e.screenY;
+    const dx = e.screenX - resizeStart.x;
+    const delta = Math.abs(dy) > Math.abs(dx) ? dy : dx;
+    applyHeight(resizeStart.h + delta * 1.4, true);
+  });
+  grip.addEventListener("pointerup", (e) => {
+    if (!resizing) return;
+    e.stopPropagation();
+    resizing = false;
+    resizeStart = null;
+    grip.classList.remove("active");
+    try { grip.releasePointerCapture(e.pointerId); } catch (_) {}
+    beep(420, 0.05, "triangle", 0.03, 560);
+  });
+
+  window.addEventListener("wheel", (e) => {
+    if (menu.classList.contains("open")) return;
+    e.preventDefault();
+    const step = e.ctrlKey ? -e.deltaY * 4.0 : -e.deltaY * 0.45;
+    if (Math.abs(step) >= 1) applyHeight(curWinH + step, true);
+  }, { passive: false });
+
+  function canvasPixelCoords(clientX, clientY) {
+    const r = canvas.getBoundingClientRect();
+    const px = Math.floor(((clientX - r.left) / Math.max(1, r.width)) * W);
+    const py = Math.floor(((clientY - r.top) / Math.max(1, r.height)) * H);
+    return {
+      px: Math.max(0, Math.min(W - 1, px)),
+      py: Math.max(0, Math.min(H - 1, py)),
+      nx: ((clientX - r.left) / Math.max(1, r.width)) * 2 - 1,
+      ny: 1 - ((clientY - r.top) / Math.max(1, r.height)) * 2,
+    };
+  }
+  function isOpaqueAt(px, py) {
+    return ((buf32[py * W + px] >>> 24) & 255) > 0;
+  }
+
+  canvas.addEventListener("pointermove", (e) => {
+    const { px, py, nx, ny } = canvasPixelCoords(e.clientX, e.clientY);
+    hover = true;
+    mx = nx;
+    my = ny;
+
+    if (grabbing && dragStartScreen && dragStartWin) {
+      const dx = e.screenX - dragStartScreen.x;
+      const dy = e.screenY - dragStartScreen.y;
+      if (Math.hypot(dx, dy) > 4) movedOnDrag = true;
+      const now = performance.now();
+      const dtMs = Math.max(8, now - lastDragT);
+      dragVx = (e.screenX - lastDragX) / (dtMs / 1000);
+      lastDragX = e.screenX;
+      lastDragT = now;
+      invoke("move_mascot_to", { x: dragStartWin[0] + dx, y: dragStartWin[1] + dy }).catch(() => {});
+      return;
+    }
+
+    if (py < 96 && isOpaqueAt(px, py)) {
+      if (lastMovePx) {
+        petAcc += Math.abs(px - lastMovePx.px);
+        if (petAcc >= 16) {
+          petTrigger = true;
+          petAcc = 0;
+        }
+      }
+      lastMovePx = { px, py };
+    } else {
+      petAcc = 0;
+      lastMovePx = null;
+    }
+  });
+
+  canvas.addEventListener("pointerleave", () => {
+    hover = false;
+    petAcc = 0;
+    lastMovePx = null;
+  });
+
+  canvas.addEventListener("pointerdown", async (e) => {
+    unlockAudio();
+    if (e.button !== 0) return;
+    if (menu.classList.contains("open")) {
+      menu.classList.remove("open");
+      return;
+    }
+    const { px, py } = canvasPixelCoords(e.clientX, e.clientY);
+    if (!isOpaqueAt(px, py) && py > 136) return;
+    grabbing = true;
+    movedOnDrag = false;
+    dragVx = 0;
+    canvas.classList.add("grabbing");
+    canvas.setPointerCapture(e.pointerId);
+    dragStartScreen = { x: e.screenX, y: e.screenY };
+    lastDragX = e.screenX;
+    lastDragT = performance.now();
+    try {
+      dragStartWin = await invoke("get_window_pos");
+    } catch (_) {
+      dragStartWin = null;
+    }
+  });
+
+  canvas.addEventListener("pointerup", (e) => {
+    if (!grabbing) return;
+    const wasMoved = movedOnDrag;
+    const { py } = canvasPixelCoords(e.clientX, e.clientY);
+    grabbing = false;
+    dragVx = 0;
+    canvas.classList.remove("grabbing");
+    try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+    if (wasMoved) {
+      invoke("release_grab").catch(() => {});
+    } else if (py < 82) {
+      petTrigger = true;
+    } else {
+      pokeTrigger = true;
+    }
+  });
+
+  canvas.addEventListener("dblclick", (e) => {
+    unlockAudio();
+    if (e.shiftKey) {
+      invoke("toggle_big_view").then((h) => { curWinH = h; syncUiButtons(); }).catch(() => {});
+    } else {
+      dblTrigger = true;
+    }
+  });
+
+  window.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    unlockAudio();
+    menu.classList.toggle("open");
+  });
+  window.addEventListener("dragover", (e) => e.preventDefault());
+  window.addEventListener("drop", (e) => e.preventDefault());
+
+  $("btnCloseMenu").addEventListener("click", () => menu.classList.remove("open"));
+
+  document.querySelectorAll(".act-btn").forEach((b) => {
+    b.addEventListener("click", () => {
+      document.querySelectorAll(".act-btn").forEach((x) => x.classList.toggle("on", x === b));
+      const a = b.dataset.act;
+      autoMode = (a === "auto");
+      forceState = autoMode ? "" : a;
+      menu.classList.remove("open");
+    });
+  });
+
+  document.querySelectorAll(".st-btn").forEach((b) => {
+    b.addEventListener("click", () => {
+      style = b.dataset.st;
+      syncUiButtons();
+      saveUiPrefs();
+    });
+  });
+
+  $("btnOutline").addEventListener("click", () => {
+    outline = !outline;
+    syncUiButtons();
+    saveUiPrefs();
+  });
+
+  $("btnPerch").addEventListener("click", async () => {
+    perchOn = !perchOn;
+    syncUiButtons();
+    try { await invoke("set_perch_enabled", { enabled: perchOn }); } catch (_) {}
+  });
+
+  $("btnClickThrough").addEventListener("click", async () => {
+    clickThroughOn = !clickThroughOn;
+    syncUiButtons();
+    try { await invoke("set_click_through", { enabled: clickThroughOn }); } catch (_) {}
+  });
+
+  $("btnFloor").addEventListener("click", async () => {
+    menu.classList.remove("open");
+    try { await invoke("drop_to_floor"); } catch (_) {}
+  });
+
+  document.querySelectorAll(".sz-btn").forEach((b) => {
+    b.addEventListener("click", () => {
+      applyHeight(Number(b.dataset.h), true);
+    });
+  });
+
+  $("btnBig").addEventListener("click", () => {
+    menu.classList.remove("open");
+    invoke("toggle_big_view").then((h) => { curWinH = h; syncUiButtons(); }).catch(() => {});
+  });
+
+  $("btnIntroOpt").addEventListener("click", async () => {
+    introOn = !introOn;
+    syncUiButtons();
+    try { await invoke("set_intro_enabled", { enabled: introOn }); } catch (_) {}
+  });
+
+  $("btnReplayIntro").addEventListener("click", async () => {
+    menu.classList.remove("open");
+    try { await invoke("replay_intro"); } catch (_) {}
+  });
+
+  $("btnSfx").addEventListener("click", () => {
+    sfxOn = !sfxOn;
+    syncUiButtons();
+    saveUiPrefs();
+    if (sfxOn) unlockAudio();
+  });
+
+  $("btnPin").addEventListener("click", async () => {
+    pinned = !pinned;
+    syncUiButtons();
+    try { await invoke("set_pin_top", { pinned }); } catch (_) {}
+  });
+
+  $("btnCenter").addEventListener("click", async () => {
+    menu.classList.remove("open");
+    try { await invoke("recenter_mascot"); } catch (_) {}
+  });
+
+  $("btnSample").addEventListener("click", async () => {
+    menu.classList.remove("open");
+    try { await invoke("reset_sample_vrm"); } catch (_) {}
+  });
+
+  $("inVrm").addEventListener("change", async (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    menu.classList.remove("open");
+    if (!f) return;
+    try {
+      const bytes = Array.from(new Uint8Array(await f.arrayBuffer()));
+      await invoke("save_temp_vrm", { name: f.name, bytes });
+    } catch (err) {
+      showToast("Error: " + err, true);
+    }
+  });
+
+  $("btnQuit").addEventListener("click", () => {
+    invoke("close_walk").catch(() => {});
+  });
+
+  function updateLut(pal) {
+    for (let i = 0; i < 255; i++) {
+      const c = pal[i] || 0;
+      const r = (c >>> 16) & 255;
+      const g = (c >>> 8) & 255;
+      const b = c & 255;
+      lut[i] = (255 << 24) | (b << 16) | (g << 8) | r;
+    }
+    lut[255] = 0;
+  }
+
+  let prevTick = performance.now();
+  async function tickLoop() {
+    const now = performance.now();
+    const dt = Math.min(0.08, Math.max(0.01, (now - prevTick) / 1000));
+    prevTick = now;
+
+    const payload = {
+      dt,
+      mx,
+      my,
+      hover,
+      pet: petTrigger,
+      poke: pokeTrigger,
+      dblclick: dblTrigger,
+      grabbing,
+      dragVx,
+      resizing,
+      menuOpen: menu.classList.contains("open"),
+      autoMode,
+      forceState,
+      style,
+      outline,
+      lastPalVer,
+    };
+    petTrigger = false;
+    pokeTrigger = false;
+    dblTrigger = false;
+
+    try {
+      const raw = await invoke("step_mascot", { input: payload });
+      const view = new DataView(raw);
+      const metaLen = view.getUint32(0, true);
+      const metaJson = new TextDecoder().decode(new Uint8Array(raw, 4, metaLen));
+      const meta = JSON.parse(metaJson);
+      const pix = new Uint8Array(raw, 4 + metaLen);
+
+      if (meta.palette && meta.palVer !== lastPalVer) {
+        updateLut(meta.palette);
+        lastPalVer = meta.palVer;
+      }
+      if (pix.length === W * H) {
+        for (let i = 0; i < pix.length; i++) {
+          buf32[i] = lut[pix[i]];
+        }
+        ctx.putImageData(imgData, 0, 0);
+      }
+
+      if (meta.winH && !meta.introBig) curWinH = meta.winH;
+      stage.classList.toggle("drop-hover", Boolean(meta.dragHoverFile));
+      stage.classList.toggle("perch-preview", Boolean(meta.canPerchPreview));
+      const where = meta.onWindowEdge ? "窓の上" : "床";
+      $("modelInfo").textContent = `${meta.title} · ${meta.state} (${where})`;
+      if (meta.status) showToast(meta.status, Boolean(meta.statusError));
+      if (Array.isArray(meta.sfx)) {
+        for (const s of meta.sfx) playSfx(s);
+      }
+    } catch (err) {
+      showToast("Engine err: " + err, true);
+      await new Promise((r) => setTimeout(r, 400));
+    }
+
+    const elapsed = performance.now() - now;
+    setTimeout(tickLoop, Math.max(4, Math.round(33.3 - elapsed)));
+  }
+
+  // Restore saved user settings before starting loop
+  (async () => {
+    try {
+      const s = await invoke("get_saved_settings");
+      if (s) {
+        if (s.style) style = s.style;
+        outline = Boolean(s.outline);
+        sfxOn = Boolean(s.sfxOn);
+        pinned = Boolean(s.pinned);
+        perchOn = Boolean(s.perchEnabled);
+        introOn = Boolean(s.introEnabled);
+        clickThroughOn = Boolean(s.clickThrough);
+        if (s.winH) curWinH = s.winH;
+        syncUiButtons();
+      }
+    } catch (_) {}
+    tickLoop();
+  })();
+})();
+</script>
+</body>
+</html>

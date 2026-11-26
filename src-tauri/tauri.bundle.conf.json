@@ -1,0 +1,9 @@
+{
+  "bundle": {
+    "resources": {
+      "engine_dist/vrm_walk_engine": "engine_dist/vrm_walk_engine",
+      "../assets/sample.vrm": "assets/sample.vrm",
+      "../THIRD_PARTY_LICENSES.md": "THIRD_PARTY_LICENSES.md"
+    }
+  }
+}
