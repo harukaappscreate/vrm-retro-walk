@@ -605,11 +605,14 @@ fn spawn_python_worker(
     let initial_vrm = initial_vrm_override
         .filter(|p| Path::new(p).exists())
         .map(PathBuf::from)
-        .or(sample);
+        .or(sample.clone());
 
     let (program, mut cmd) = if let Some(bin_path) = find_bundled_engine(&roots) {
         let mut c = Command::new(&bin_path);
         c.arg("--ipc");
+        if let Some(sp) = &sample {
+            c.arg("--sample").arg(sp);
+        }
         if let Some(sv) = initial_vrm {
             c.arg(sv);
         }
@@ -618,6 +621,9 @@ fn spawn_python_worker(
         let py = find_dev_python(&roots);
         let mut c = Command::new(&py);
         c.arg("-u").arg(&script).arg("--ipc");
+        if let Some(sp) = &sample {
+            c.arg("--sample").arg(sp);
+        }
         if let Some(sv) = initial_vrm {
             c.arg(sv);
         }

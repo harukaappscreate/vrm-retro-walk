@@ -158,7 +158,7 @@ class MeshFigureNode(Node):
 
 
 class WalkRenderer:
-    def __init__(self, initial_vrm=None):
+    def __init__(self, initial_vrm=None, sample_vrm=None):
         pyxel.init(W, H, title="VRM RETRO WALK", fps=30, headless=True)
         self.base_cols = list(UI) + [0x808080] * (255 - 16) + [0xFF00FF]
         self.active_cols = list(self.base_cols)
@@ -184,10 +184,15 @@ class WalkRenderer:
         self.intro_t = -1.0   # >= 0 when playing giant intro reveal
         self.status_text = ""
         self.status_error = False
-        self.sample_path = self._find_sample(initial_vrm)
+        # The built-in avatar (Shibu) and the avatar to show first are kept apart,
+        # so that "back to the sample" always returns to the built-in one.
+        self.sample_path = self._find_sample(sample_vrm)
+        first = initial_vrm if (initial_vrm and os.path.exists(initial_vrm)) else self.sample_path
 
-        if self.sample_path:
-            ok, msg = self.load_vrm(self.sample_path, play_morph=True)
+        if first:
+            ok, msg = self.load_vrm(first, play_morph=True)
+            if not ok and self.sample_path and first != self.sample_path:
+                ok, msg = self.load_vrm(self.sample_path, play_morph=True)
             if not ok:
                 self._install_model(PR.ProceduralModel())
                 self.status_text, self.status_error = msg, True
@@ -627,6 +632,13 @@ if __name__ == "__main__":
         vrm = os.path.abspath(rest[0]) if rest else None
         run_verify_sheet(out_path, vrm)
     else:
-        rest = [a for a in sys.argv[1:] if a != "--ipc"]
+        args = sys.argv[1:]
+        sample = None
+        if "--sample" in args:
+            k = args.index("--sample")
+            if k + 1 < len(args):
+                sample = os.path.abspath(args[k + 1])
+            args = args[:k] + args[k + 2:]
+        rest = [a for a in args if a != "--ipc"]
         vrm = os.path.abspath(rest[0]) if rest else None
-        WalkRenderer(vrm).run_ipc()
+        WalkRenderer(vrm, sample).run_ipc()
